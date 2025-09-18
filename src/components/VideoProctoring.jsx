@@ -45,18 +45,33 @@ const Controls = styled.div`
   display: flex;
   gap: 10px;
   margin-top: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
 `;
 
 const Button = styled.button`
   padding: 8px 16px;
   border-radius: 4px;
   border: none;
-  background-color: ${props => props['data-recording'] === 'true' ? '#ff4444' : '#4444ff'};
+  background-color: ${props => {
+    if (props['data-recording'] === 'true') return '#ff4444';
+    if (props['data-camera'] === 'true') return '#44ff44';
+    return '#4444ff';
+  }};
   color: white;
   cursor: pointer;
   &:hover {
     opacity: 0.9;
   }
+`;
+
+const PermissionContainer = styled.div`
+  text-align: center;
+  padding: 20px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  margin: 20px;
+  max-width: 400px;
 `;
 
 const ItemList = styled.div`
@@ -91,6 +106,8 @@ const VideoProctoring = () => {
   const [recordedChunks, setRecordedChunks] = useState([]);
   const [lastDetectedItems, setLastDetectedItems] = useState(new Set());
   const [sessionId] = useState(uuidv4());
+  const [isCameraEnabled, setIsCameraEnabled] = useState(false);
+  const [detectionInterval, setDetectionInterval] = useState(null);
 
   useEffect(() => {
     const loadModels = async () => {
@@ -111,10 +128,8 @@ const VideoProctoring = () => {
       timestamp: new Date().toLocaleTimeString()
     };
 
-    // Update local state
     setEvents(prev => [newEvent, ...prev]);
 
-    // Send to backend
     try {
       await fetch(`${API_URL}/events`, {
         method: 'POST',
@@ -139,7 +154,7 @@ const VideoProctoring = () => {
 
       if (predictions.length === 0) {
         const timeSinceLastFace = Date.now() - lastFaceDetectionTime;
-        if (timeSinceLastFace > 10000) { // 10 seconds
+        if (timeSinceLastFace > 10000) {
           logEvent('No face detected', 'No face detected for more than 10 seconds');
           setIsFocused(false);
         }
@@ -148,7 +163,7 @@ const VideoProctoring = () => {
         setIsFocused(false);
       } else {
         const face = predictions[0];
-        const [x, y] = face.landmarks[2]; // Nose position
+        const [x, y] = face.landmarks[2];
         const videoWidth = video.videoWidth;
         const videoHeight = video.videoHeight;
         
@@ -158,7 +173,7 @@ const VideoProctoring = () => {
 
         if (!isFacingScreen) {
           const timeSinceLastFocus = Date.now() - lastFocusedTime;
-          if (timeSinceLastFocus > 5000) { // 5 seconds
+          if (timeSinceLastFocus > 5000) {
             logEvent('Not looking at screen', 'Not looking at screen for more than 5 seconds');
             setIsFocused(false);
           }
@@ -199,7 +214,6 @@ const VideoProctoring = () => {
         }
       });
 
-      // Only log new items or when previously detected items disappear
       const newItems = [...detectedItems].filter(item => !lastDetectedItems.has(item));
       const removedItems = [...lastDetectedItems].filter(item => !detectedItems.has(item));
 
@@ -215,23 +229,51 @@ const VideoProctoring = () => {
     }
   };
 
-  useEffect(() => {
+  const startDetection = () => {
     const interval = setInterval(() => {
       detectFace();
       detectObjects();
     }, 1000);
+    setDetectionInterval(interval);
+  };
 
-    return () => clearInterval(interval);
-  }, [faceModel, objectModel]);
+  const stopDetection = () => {
+    if (detectionInterval) {
+      clearInterval(detectionInterval);
+      setDetectionInterval(null);
+    }
+  };
+
+  const handleCameraToggle = async () => {
+    if (isCameraEnabled) {
+      setIsCameraEnabled(false);
+      stopDetection();
+      if (isRecording) {
+        handleStopRecording();
+      }
+      logEvent('Camera disabled');
+    } else {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        stream.getTracks().forEach(track => track.stop());
+        setIsCameraEnabled(true);
+        startDetection();
+        logEvent('Camera enabled');
+      } catch (error) {
+        console.error('Error accessing camera:', error);
+        logEvent('Camera access denied');
+      }
+    }
+  };
 
   const handleStartRecording = () => {
     setRecordedChunks([]);
     if (webcamRef.current && webcamRef.current.stream) {
       mediaRecorderRef.current = new MediaRecorder(webcamRef.current.stream, {
-        mimeType: 'video/webm;codecs=vp9,opus'
+        mimeType: 'video/webm;codecs=vp9'
       });
       mediaRecorderRef.current.addEventListener('dataavailable', handleDataAvailable);
-      mediaRecorderRef.current.start(1000); // Record in 1-second chunks
+      mediaRecorderRef.current.start(1000);
       setIsRecording(true);
       logEvent('Recording started');
     }
@@ -272,51 +314,66 @@ const VideoProctoring = () => {
 
   return (
     <Container>
-      <VideoContainer>
-        <Webcam
-          ref={webcamRef}
-          audio={true}
-          width={640}
-          height={480}
-          screenshotFormat="image/jpeg"
-          videoConstraints={{
-            width: 640,
-            height: 480,
-            facingMode: 'user'
-          }}
-        />
-        <AlertContainer data-alert={(!isFocused || suspiciousItems.length > 0).toString()}>
-          {!isFocused ? 'Focus Lost!' : suspiciousItems.length > 0 ? 'Suspicious Items Detected!' : 'All Clear'}
-        </AlertContainer>
-      </VideoContainer>
+      {!isCameraEnabled ? (
+        <PermissionContainer>
+          <h2>Camera Access Required</h2>
+          <p>Please enable your camera to start the proctored session.</p>
+          <Button data-camera="true" onClick={handleCameraToggle}>
+            Enable Camera
+          </Button>
+        </PermissionContainer>
+      ) : (
+        <>
+          <VideoContainer>
+            <Webcam
+              ref={webcamRef}
+              audio={false}
+              width={640}
+              height={480}
+              screenshotFormat="image/jpeg"
+              videoConstraints={{
+                width: 640,
+                height: 480,
+                facingMode: 'user'
+              }}
+            />
+            <AlertContainer data-alert={(!isFocused || suspiciousItems.length > 0).toString()}>
+              {!isFocused ? 'Focus Lost!' : suspiciousItems.length > 0 ? 'Suspicious Items Detected!' : 'All Clear'}
+            </AlertContainer>
+          </VideoContainer>
 
-      {suspiciousItems.length > 0 && (
-        <ItemList>
-          {suspiciousItems.map((item, index) => (
-            <ItemTag key={index}>{item}</ItemTag>
-          ))}
-        </ItemList>
+          {suspiciousItems.length > 0 && (
+            <ItemList>
+              {suspiciousItems.map((item, index) => (
+                <ItemTag key={index}>{item}</ItemTag>
+              ))}
+            </ItemList>
+          )}
+
+          <Controls>
+            <Button data-camera="false" onClick={handleCameraToggle}>
+              Disable Camera
+            </Button>
+            {!isRecording ? (
+              <Button onClick={handleStartRecording}>Start Recording</Button>
+            ) : (
+              <Button data-recording="true" onClick={handleStopRecording}>Stop Recording</Button>
+            )}
+            {recordedChunks.length > 0 && (
+              <Button onClick={handleDownload}>Download Recording</Button>
+            )}
+          </Controls>
+
+          <EventLog>
+            {events.map((event, index) => (
+              <div key={index}>
+                [{event.timestamp}] {event.type}
+                {event.details && `: ${event.details}`}
+              </div>
+            ))}
+          </EventLog>
+        </>
       )}
-
-      <Controls>
-        {!isRecording ? (
-          <Button onClick={handleStartRecording}>Start Recording</Button>
-        ) : (
-          <Button data-recording="true" onClick={handleStopRecording}>Stop Recording</Button>
-        )}
-        {recordedChunks.length > 0 && (
-          <Button onClick={handleDownload}>Download Recording</Button>
-        )}
-      </Controls>
-
-      <EventLog>
-        {events.map((event, index) => (
-          <div key={index}>
-            [{event.timestamp}] {event.type}
-            {event.details && `: ${event.details}`}
-          </div>
-        ))}
-      </EventLog>
     </Container>
   );
 };

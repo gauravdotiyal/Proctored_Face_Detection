@@ -12,7 +12,10 @@ const proctoringEventSchema = new mongoose.Schema({
       'Items removed',
       'Recording started',
       'Recording stopped',
-      'Recording downloaded'
+      'Recording downloaded',
+      'Camera enabled',
+      'Camera disabled',
+      'Camera access denied'
     ]
   },
   details: {

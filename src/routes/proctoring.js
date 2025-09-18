@@ -17,7 +17,7 @@ router.post('/events', async (req, res) => {
     res.status(201).json(event);
   } catch (error) {
     console.error('Error logging event:', error);
-    res.status(500).json({ error: 'Failed to log event' });
+    res.status(500).json({ error: 'Failed to log event', details: error.message });
   }
 });
 
@@ -41,12 +41,18 @@ router.get('/reports/:sessionId', async (req, res) => {
       recordingEvents: events.filter(e =>
         ['Recording started', 'Recording stopped', 'Recording downloaded'].includes(e.type)
       ),
+      cameraEvents: events.filter(e =>
+        ['Camera enabled', 'Camera disabled', 'Camera access denied'].includes(e.type)
+      ),
       summary: {
         focusViolations: events.filter(e => 
           ['No face detected', 'Multiple faces detected', 'Not looking at screen'].includes(e.type)
         ).length,
         itemViolations: events.filter(e =>
           ['Suspicious items detected'].includes(e.type)
+        ).length,
+        cameraIssues: events.filter(e =>
+          ['Camera access denied'].includes(e.type)
         ).length
       },
       allEvents: events
@@ -55,7 +61,7 @@ router.get('/reports/:sessionId', async (req, res) => {
     res.json(report);
   } catch (error) {
     console.error('Error generating report:', error);
-    res.status(500).json({ error: 'Failed to generate report' });
+    res.status(500).json({ error: 'Failed to generate report', details: error.message });
   }
 });
 
@@ -86,6 +92,15 @@ router.get('/reports', async (req, res) => {
                 0
               ]
             }
+          },
+          cameraIssues: {
+            $sum: {
+              $cond: [
+                { $eq: ['$type', 'Camera access denied'] },
+                1,
+                0
+              ]
+            }
           }
         }
       },
@@ -98,7 +113,8 @@ router.get('/reports', async (req, res) => {
           startTime: 1,
           endTime: 1,
           focusViolations: 1,
-          itemViolations: 1
+          itemViolations: 1,
+          cameraIssues: 1
         }
       },
       { $sort: { startTime: -1 } }
@@ -107,7 +123,7 @@ router.get('/reports', async (req, res) => {
     res.json(reports);
   } catch (error) {
     console.error('Error generating sessions summary:', error);
-    res.status(500).json({ error: 'Failed to generate sessions summary' });
+    res.status(500).json({ error: 'Failed to generate sessions summary', details: error.message });
   }
 });
 
