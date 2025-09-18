@@ -9,6 +9,13 @@ const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/tutedu
 
 app.use(cors());
 app.use(express.json());
+const path = require('path');
+app.use(express.static(path.resolve(__dirname, '..', 'dist')));
+
+// fallback for client-side routing
+app.get('*', (req, res) => {
+  res.sendFile(path.resolve(__dirname, '..', 'dist', 'index.html'));
+});
 
 // API routes
 app.use('/api/proctoring', proctoringRoutes);
