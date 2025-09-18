@@ -92,6 +92,42 @@ const ItemTag = styled.span`
   font-size: 12px;
 `;
 
+const ReportContainer = styled.div`
+  width: 100%;
+  max-width: 600px;
+  padding: 20px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  margin: 20px;
+  background-color: white;
+`;
+
+const ReportHeader = styled.div`
+  text-align: center;
+  margin-bottom: 20px;
+  h2 {
+    color: #333;
+    margin-bottom: 10px;
+  }
+`;
+
+const ReportSection = styled.div`
+  margin-bottom: 15px;
+  padding: 10px;
+  border-bottom: 1px solid #eee;
+  &:last-child {
+    border-bottom: none;
+  }
+`;
+
+const ScoreDisplay = styled.div`
+  text-align: center;
+  font-size: 24px;
+  font-weight: bold;
+  color: ${props => props.score > 70 ? '#44ff44' : props.score > 50 ? '#ffaa44' : '#ff4444'};
+  margin: 20px 0;
+`;
+
 const VideoProctoring = () => {
   const webcamRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -108,6 +144,8 @@ const VideoProctoring = () => {
   const [sessionId] = useState(uuidv4());
   const [isCameraEnabled, setIsCameraEnabled] = useState(false);
   const [detectionInterval, setDetectionInterval] = useState(null);
+  const [sessionReport, setSessionReport] = useState(null);
+  const [candidateName, setCandidateName] = useState('John Doe'); // Replace with actual name input
 
   useEffect(() => {
     const loadModels = async () => {
@@ -144,6 +182,36 @@ const VideoProctoring = () => {
       });
     } catch (error) {
       console.error('Failed to log event:', error);
+    }
+  };
+
+  const fetchSessionReport = async () => {
+    try {
+      const response = await fetch(`${API_URL}/reports/${sessionId}`);
+      const data = await response.json();
+      
+      const startTime = new Date(data.allEvents[data.allEvents.length - 1].timestamp);
+      const endTime = new Date(data.allEvents[0].timestamp);
+      const duration = Math.round((endTime - startTime) / 1000 / 60); // Duration in minutes
+
+      const focusLostCount = data.focusEvents.length;
+      const suspiciousEventCount = data.itemEvents.length;
+
+      // Calculate integrity score
+      const focusDeduction = focusLostCount * 5; // -5 points per focus loss
+      const itemDeduction = suspiciousEventCount * 10; // -10 points per suspicious item
+      const integrityScore = Math.max(0, 100 - focusDeduction - itemDeduction);
+
+      setSessionReport({
+        candidateName,
+        duration,
+        focusLostCount,
+        suspiciousEventCount,
+        integrityScore,
+        events: data.allEvents
+      });
+    } catch (error) {
+      console.error('Error fetching report:', error);
     }
   };
 
@@ -252,6 +320,7 @@ const VideoProctoring = () => {
         handleStopRecording();
       }
       logEvent('Camera disabled');
+      await fetchSessionReport();
     } else {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
@@ -259,6 +328,7 @@ const VideoProctoring = () => {
         setIsCameraEnabled(true);
         startDetection();
         logEvent('Camera enabled');
+        setSessionReport(null);
       } catch (error) {
         console.error('Error accessing camera:', error);
         logEvent('Camera access denied');
@@ -315,13 +385,42 @@ const VideoProctoring = () => {
   return (
     <Container>
       {!isCameraEnabled ? (
-        <PermissionContainer>
-          <h2>Camera Access Required</h2>
-          <p>Please enable your camera to start the proctored session.</p>
-          <Button data-camera="true" onClick={handleCameraToggle}>
-            Enable Camera
-          </Button>
-        </PermissionContainer>
+        sessionReport ? (
+          <ReportContainer>
+            <ReportHeader>
+              <h2>Proctoring Session Report</h2>
+              <p>Session ID: {sessionId}</p>
+            </ReportHeader>
+            
+            <ReportSection>
+              <h3>Candidate Information</h3>
+              <p>Name: {sessionReport.candidateName}</p>
+              <p>Interview Duration: {sessionReport.duration} minutes</p>
+            </ReportSection>
+
+            <ReportSection>
+              <h3>Focus Analysis</h3>
+              <p>Times Focus Lost: {sessionReport.focusLostCount}</p>
+              <p>Suspicious Events Detected: {sessionReport.suspiciousEventCount}</p>
+            </ReportSection>
+
+            <ScoreDisplay score={sessionReport.integrityScore}>
+              Integrity Score: {sessionReport.integrityScore}%
+            </ScoreDisplay>
+
+            <Button data-camera="true" onClick={handleCameraToggle}>
+              Start New Session
+            </Button>
+          </ReportContainer>
+        ) : (
+          <PermissionContainer>
+            <h2>Camera Access Required</h2>
+            <p>Please enable your camera to start the proctored session.</p>
+            <Button data-camera="true" onClick={handleCameraToggle}>
+              Enable Camera
+            </Button>
+          </PermissionContainer>
+        )
       ) : (
         <>
           <VideoContainer>
@@ -352,7 +451,7 @@ const VideoProctoring = () => {
 
           <Controls>
             <Button data-camera="false" onClick={handleCameraToggle}>
-              Disable Camera
+              End Session
             </Button>
             {!isRecording ? (
               <Button onClick={handleStartRecording}>Start Recording</Button>
