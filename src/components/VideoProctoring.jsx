@@ -4,6 +4,9 @@ import * as tf from '@tensorflow/tfjs';
 import * as blazeface from '@tensorflow-models/blazeface';
 import * as cocossd from '@tensorflow-models/coco-ssd';
 import styled from 'styled-components';
+import { v4 as uuidv4 } from 'uuid';
+
+const API_URL = 'http://localhost:5000/api/proctoring';
 
 const Container = styled.div`
   display: flex;
@@ -56,6 +59,24 @@ const Button = styled.button`
   }
 `;
 
+const ItemList = styled.div`
+  margin-top: 10px;
+  padding: 8px;
+  background-color: #fff4f4;
+  border-radius: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+`;
+
+const ItemTag = styled.span`
+  background-color: #ff4444;
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+`;
+
 const VideoProctoring = () => {
   const webcamRef = useRef(null);
   const mediaRecorderRef = useRef(null);
@@ -68,6 +89,8 @@ const VideoProctoring = () => {
   const [suspiciousItems, setSuspiciousItems] = useState([]);
   const [isRecording, setIsRecording] = useState(false);
   const [recordedChunks, setRecordedChunks] = useState([]);
+  const [lastDetectedItems, setLastDetectedItems] = useState(new Set());
+  const [sessionId] = useState(uuidv4());
 
   useEffect(() => {
     const loadModels = async () => {
@@ -80,12 +103,33 @@ const VideoProctoring = () => {
     loadModels();
   }, []);
 
-  const addEvent = (eventType) => {
+  const logEvent = async (type, details = '') => {
     const newEvent = {
-      type: eventType,
-      timestamp: new Date().toLocaleTimeString(),
+      type,
+      details,
+      sessionId,
+      timestamp: new Date().toLocaleTimeString()
     };
+
+    // Update local state
     setEvents(prev => [newEvent, ...prev]);
+
+    // Send to backend
+    try {
+      await fetch(`${API_URL}/events`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type,
+          details,
+          sessionId
+        })
+      });
+    } catch (error) {
+      console.error('Failed to log event:', error);
+    }
   };
 
   const detectFace = async () => {
@@ -96,11 +140,11 @@ const VideoProctoring = () => {
       if (predictions.length === 0) {
         const timeSinceLastFace = Date.now() - lastFaceDetectionTime;
         if (timeSinceLastFace > 10000) { // 10 seconds
-          addEvent('No face detected');
+          logEvent('No face detected', 'No face detected for more than 10 seconds');
           setIsFocused(false);
         }
       } else if (predictions.length > 1) {
-        addEvent('Multiple faces detected');
+        logEvent('Multiple faces detected', `${predictions.length} faces detected`);
         setIsFocused(false);
       } else {
         const face = predictions[0];
@@ -108,7 +152,6 @@ const VideoProctoring = () => {
         const videoWidth = video.videoWidth;
         const videoHeight = video.videoHeight;
         
-        // Check if face is looking at screen based on nose position
         const isFacingScreen = 
           x > videoWidth * 0.25 && x < videoWidth * 0.75 &&
           y > videoHeight * 0.25 && y < videoHeight * 0.75;
@@ -116,7 +159,7 @@ const VideoProctoring = () => {
         if (!isFacingScreen) {
           const timeSinceLastFocus = Date.now() - lastFocusedTime;
           if (timeSinceLastFocus > 5000) { // 5 seconds
-            addEvent('Not looking at screen');
+            logEvent('Not looking at screen', 'Not looking at screen for more than 5 seconds');
             setIsFocused(false);
           }
         } else {
@@ -133,18 +176,42 @@ const VideoProctoring = () => {
       const video = webcamRef.current.video;
       const predictions = await objectModel.detect(video);
 
-      const suspiciousObjects = predictions.filter(pred => {
-        const suspiciousClasses = ['cell phone', 'book', 'laptop', 'tablet'];
-        return suspiciousClasses.includes(pred.class.toLowerCase());
+      const suspiciousClasses = new Map([
+        ['cell phone', 'Mobile Phone'],
+        ['mobile phone', 'Mobile Phone'],
+        ['book', 'Book/Notes'],
+        ['laptop', 'Laptop'],
+        ['tablet', 'Tablet'],
+        ['computer', 'Computer'],
+        ['monitor', 'Extra Screen'],
+        ['keyboard', 'External Keyboard'],
+        ['mouse', 'External Mouse'],
+        ['remote', 'Remote Control'],
+        ['paper', 'Paper Notes'],
+        ['notebook', 'Notebook']
+      ]);
+
+      const detectedItems = new Set();
+      predictions.forEach(pred => {
+        const normalizedClass = pred.class.toLowerCase();
+        if (suspiciousClasses.has(normalizedClass)) {
+          detectedItems.add(suspiciousClasses.get(normalizedClass));
+        }
       });
 
-      if (suspiciousObjects.length > 0) {
-        const items = suspiciousObjects.map(obj => obj.class);
-        setSuspiciousItems(items);
-        addEvent(`Suspicious items detected: ${items.join(', ')}`);
-      } else {
-        setSuspiciousItems([]);
+      // Only log new items or when previously detected items disappear
+      const newItems = [...detectedItems].filter(item => !lastDetectedItems.has(item));
+      const removedItems = [...lastDetectedItems].filter(item => !detectedItems.has(item));
+
+      if (newItems.length > 0) {
+        logEvent('Suspicious items detected', `New items detected: ${newItems.join(', ')}`);
       }
+      if (removedItems.length > 0) {
+        logEvent('Items removed', `Items no longer visible: ${removedItems.join(', ')}`);
+      }
+
+      setSuspiciousItems([...detectedItems]);
+      setLastDetectedItems(detectedItems);
     }
   };
 
@@ -166,7 +233,7 @@ const VideoProctoring = () => {
       mediaRecorderRef.current.addEventListener('dataavailable', handleDataAvailable);
       mediaRecorderRef.current.start(1000); // Record in 1-second chunks
       setIsRecording(true);
-      addEvent('Recording started');
+      logEvent('Recording started');
     }
   };
 
@@ -181,7 +248,7 @@ const VideoProctoring = () => {
       mediaRecorderRef.current.removeEventListener('dataavailable', handleDataAvailable);
       mediaRecorderRef.current.stop();
       setIsRecording(false);
-      addEvent('Recording stopped');
+      logEvent('Recording stopped');
     }
   };
 
@@ -191,14 +258,15 @@ const VideoProctoring = () => {
         type: 'video/webm'
       });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');      document.body.appendChild(a);
+      const a = document.createElement('a');
+      document.body.appendChild(a);
       a.style = 'display: none';
       a.href = url;
-      a.download = `interview-recording-${new Date().toISOString()}.webm`;
+      a.download = `interview-recording-${sessionId}-${new Date().toISOString()}.webm`;
       a.click();
       window.URL.revokeObjectURL(url);
       setRecordedChunks([]);
-      addEvent('Recording downloaded');
+      logEvent('Recording downloaded');
     }
   };
 
@@ -222,6 +290,14 @@ const VideoProctoring = () => {
         </AlertContainer>
       </VideoContainer>
 
+      {suspiciousItems.length > 0 && (
+        <ItemList>
+          {suspiciousItems.map((item, index) => (
+            <ItemTag key={index}>{item}</ItemTag>
+          ))}
+        </ItemList>
+      )}
+
       <Controls>
         {!isRecording ? (
           <Button onClick={handleStartRecording}>Start Recording</Button>
@@ -234,10 +310,10 @@ const VideoProctoring = () => {
       </Controls>
 
       <EventLog>
-        <h3>Event Log</h3>
         {events.map((event, index) => (
           <div key={index}>
             [{event.timestamp}] {event.type}
+            {event.details && `: ${event.details}`}
           </div>
         ))}
       </EventLog>
