@@ -145,7 +145,9 @@ const VideoProctoring = () => {
   const [isCameraEnabled, setIsCameraEnabled] = useState(false);
   const [detectionInterval, setDetectionInterval] = useState(null);
   const [sessionReport, setSessionReport] = useState(null);
-  const [candidateName, setCandidateName] = useState('John Doe'); // Replace with actual name input
+  const [candidateName, setCandidateName] = useState('TuteDude Guy'); // Replace with actual name input
+  const [focusEventsData, setFocusEventsData] = useState([]);
+  const [itemEventsData, setItemEventsData] = useState([]);
 
   const [isModelsLoaded, setIsModelsLoaded] = useState(false);
   
@@ -221,6 +223,20 @@ const VideoProctoring = () => {
         integrityScore,
         events: data.allEvents
       });
+
+      // Fetch dedicated focus & item reports for detailed listing
+      try {
+        const [focusRes, itemRes] = await Promise.all([
+          fetch(`${API_URL}/reports/focus/${sessionId}`),
+          fetch(`${API_URL}/reports/items/${sessionId}`)
+        ]);
+        const focusJson = await focusRes.json();
+        const itemJson = await itemRes.json();
+        setFocusEventsData(focusJson.focusEvents || []);
+        setItemEventsData(itemJson.itemEvents || []);
+      } catch (innerErr) {
+        console.error('Error fetching detailed focus/item reports', innerErr);
+      }
     } catch (error) {
       console.error('Error fetching report:', error);
     }
@@ -405,7 +421,7 @@ const VideoProctoring = () => {
           <ReportContainer>
             <ReportHeader>
               <h2>Proctoring Session Report</h2>
-              <p>Session ID: {sessionId}</p>
+              
             </ReportHeader>
             
             <ReportSection>

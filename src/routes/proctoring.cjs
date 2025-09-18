@@ -117,4 +117,37 @@ router.get('/reports', async (req, res) => {
   }
 });
 
+// Get focus related events for a specific session
+router.get('/reports/focus/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const focusEvents = await ProctoringEvent.find({
+      sessionId,
+      type: { $in: ['No face detected', 'Multiple faces detected', 'Not looking at screen'] }
+    })
+      .sort({ timestamp: -1 })
+      .lean();
+
+    res.json({ focusEvents });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch focus events', details: error.message });
+  }
+});
+
+// Get suspicious item detection events for a specific session
+router.get('/reports/items/:sessionId', async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const itemEvents = await ProctoringEvent.find({
+      sessionId,
+      type: { $in: ['Suspicious items detected'] }
+    })
+      .sort({ timestamp: -1 })
+      .lean();
+
+    res.json({ itemEvents });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch item events', details: error.message });
+  }
+});
 module.exports = router;
