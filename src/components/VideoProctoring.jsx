@@ -147,6 +147,8 @@ const VideoProctoring = () => {
   const [sessionReport, setSessionReport] = useState(null);
   const [candidateName, setCandidateName] = useState('John Doe'); // Replace with actual name input
 
+  const [isModelsLoaded, setIsModelsLoaded] = useState(false);
+  
   useEffect(() => {
     const loadModels = async () => {
       await tf.ready();
@@ -154,9 +156,18 @@ const VideoProctoring = () => {
       const loadedObjectModel = await cocossd.load();
       setFaceModel(loadedFaceModel);
       setObjectModel(loadedObjectModel);
+      setIsModelsLoaded(true); // Set models as loaded
     };
     loadModels();
   }, []);
+
+  useEffect(() => {
+    // Start detection automatically once camera is enabled *and* models are loaded
+    if (isCameraEnabled && isModelsLoaded && !detectionInterval) {
+      startDetection();
+    }
+    // Cleanup not required here because handleCameraToggle / stopDetection handles it
+  }, [isCameraEnabled, isModelsLoaded]);
 
   const logEvent = async (type, details = '') => {
     const newEvent = {
@@ -298,6 +309,11 @@ const VideoProctoring = () => {
   };
 
   const startDetection = () => {
+    if (!isModelsLoaded) {
+      console.warn('Models are not loaded yet. Detection will not start.');
+      return;
+    }
+  
     const interval = setInterval(() => {
       detectFace();
       detectObjects();

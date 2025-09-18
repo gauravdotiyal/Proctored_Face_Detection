@@ -1,6 +1,11 @@
-import mongoose from 'mongoose';
+const mongoose = require('mongoose');
 
 const proctoringEventSchema = new mongoose.Schema({
+  sessionId: {
+    type: String,
+    required: true,
+    index: true
+  },
   type: {
     type: String,
     required: true,
@@ -15,27 +20,21 @@ const proctoringEventSchema = new mongoose.Schema({
       'Recording downloaded',
       'Camera enabled',
       'Camera disabled',
-      'Camera access denied'
+      'Camera access denied',
+      'Drowsiness detected',
+      'Background noise detected'
     ]
   },
-  details: {
-    type: String,
-    default: ''
-  },
-  sessionId: {
-    type: String,
-    required: true,
-    index: true
-  },
+  details: String,
   timestamp: {
     type: Date,
     default: Date.now
   }
 });
 
-// Create compound index for efficient querying by sessionId and timestamp
-proctoringEventSchema.index({ sessionId: 1, timestamp: 1 });
+// Create a compound index on sessionId and timestamp
+proctoringEventSchema.index({ sessionId: 1, timestamp: -1 });
 
 const ProctoringEvent = mongoose.model('ProctoringEvent', proctoringEventSchema);
 
-export default ProctoringEvent;
+module.exports = ProctoringEvent;
