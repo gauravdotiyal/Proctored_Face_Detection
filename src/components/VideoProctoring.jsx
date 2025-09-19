@@ -5,8 +5,9 @@ import * as blazeface from '@tensorflow-models/blazeface';
 import * as cocossd from '@tensorflow-models/coco-ssd';
 import styled from 'styled-components';
 import { v4 as uuidv4 } from 'uuid';
+ 
 
-const API_URL = 'http://localhost:5000/api/proctoring';
+const API_URL =  'https://proctored-face-detection.onrender.com/api/proctoring';
 
 const Container = styled.div`
   display: flex;
@@ -202,6 +203,8 @@ const VideoProctoring = () => {
     try {
       const response = await fetch(`${API_URL}/reports/${sessionId}`);
       const data = await response.json();
+
+      console.log(data);
       
       const startTime = new Date(data.allEvents[data.allEvents.length - 1].timestamp);
       const endTime = new Date(data.allEvents[0].timestamp);

@@ -1,3 +1,5 @@
+ 
+
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -5,20 +7,24 @@ const proctoringRoutes = require('./routes/proctoring.cjs');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/tutedude';
+const MONGODB_URI = process.env.MONGODB_URI  || 'mongodb+srv://gauravdotiyal33_db_user:Ffuv1Z0TiJGNsqo1@cluster0.1cbbfut.mongodb.net/ProctoredDemo';
 
 app.use(cors());
 app.use(express.json());
+
 const path = require('path');
+
+// ✅ Mount API routes first
+app.use('/api/proctoring', proctoringRoutes);
+
+// ✅ Serve static frontend AFTER API routes
 app.use(express.static(path.resolve(__dirname, '..', 'dist')));
 
-// fallback for client-side routing
+// ✅ Fallback for client-side routing
 app.get('*', (req, res) => {
   res.sendFile(path.resolve(__dirname, '..', 'dist', 'index.html'));
 });
 
-// API routes
-app.use('/api/proctoring', proctoringRoutes);
 
 // Connect to MongoDB
 mongoose.connect(MONGODB_URI)
@@ -29,5 +35,5 @@ mongoose.connect(MONGODB_URI)
     });
   })
   .catch((error) => {
-    console.error('MongoDB connection error:', error);
+    console.error('MongoDB connection error :', error);
   });
